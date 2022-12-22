@@ -1,0 +1,19 @@
+[package]
+name = "river-layout-toolkit"
+description = "Write River layouts in Rust with ease"
+repository = "https://github.com/MaxVerevkin/river-layout-toolkit"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["MaxVerevkin <maxxverrr@gmail.com>"]
+
+[dependencies]
+thiserror = "1.0"
+
+[dependencies.wayrs-client]
+git = "https://github.com/MaxVerevkin/wayrs"
+rev = "2a69ec8d2f5a4ee0ec1436965caeb4e5d72737c5"
+
+[dependencies.wayrs-scanner]
+git = "https://github.com/MaxVerevkin/wayrs"
+rev = "2a69ec8d2f5a4ee0ec1436965caeb4e5d72737c5"
