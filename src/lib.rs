@@ -12,7 +12,7 @@ use layout_protocol::{river_layout_manager_v3, river_layout_v3};
 use river_layout_manager_v3::RiverLayoutManagerV3;
 use river_layout_v3::RiverLayoutV3;
 
-use wayrs_client::event_queue::EventQueue;
+use wayrs_client::connection::Connection;
 use wayrs_client::global::{Global, GlobalExt, GlobalsExt};
 use wayrs_client::protocol::wl_output::{self, WlOutput};
 use wayrs_client::protocol::wl_registry::{self, WlRegistry};
@@ -73,7 +73,7 @@ pub enum Error<E: StdError> {
     #[error("Wayland Error: {0}")]
     WaylandInit(#[from] wayrs_client::global::BindError),
     #[error("IO error: {0}")]
-    WaylandDispatch(#[from] io::Error),
+    Io(#[from] io::Error),
     #[error("Namespace '{0}' is in use")]
     NamespaceInUse(String),
     #[error("Invalid generated layout")]
@@ -83,14 +83,15 @@ pub enum Error<E: StdError> {
 }
 
 pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
-    let (globals, mut event_queue) = EventQueue::blocking_init()?;
+    let mut conn = Connection::connect()?;
+    let globals = conn.blocking_collect_initial_globals()?;
 
-    let layout_manager = globals.bind(&mut event_queue, 1..=2)?;
+    let layout_manager = globals.bind(&mut conn, 1..=2)?;
 
     let outputs = globals
         .iter()
         .filter(|g| g.is::<WlOutput>())
-        .map(|g| Output::bind(&mut event_queue, g))
+        .map(|g| Output::bind(&mut conn, g))
         .collect();
 
     let mut state = State {
@@ -101,9 +102,9 @@ pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
     };
 
     loop {
-        event_queue.connection().flush(IoMode::Blocking).unwrap();
-        event_queue.recv_events(IoMode::Blocking).unwrap();
-        event_queue.dispatch_events(&mut state)?;
+        conn.flush(IoMode::Blocking).unwrap();
+        conn.recv_events(IoMode::Blocking).unwrap();
+        conn.dispatch_events(&mut state)?;
     }
 }
 
@@ -122,21 +123,21 @@ struct Output {
 }
 
 impl Output {
-    fn bind<L: Layout>(event_queue: &mut EventQueue<State<L>>, global: &Global) -> Self {
+    fn bind<L: Layout>(conn: &mut Connection<State<L>>, global: &Global) -> Self {
         Self {
-            wl_output: global.bind(event_queue, 1..=4).unwrap(),
+            wl_output: global.bind(conn, 1..=4).unwrap(),
             reg_name: global.name,
             name: None,
             river_layout: None,
         }
     }
 
-    fn drop<L: Layout>(self, event_queue: &mut EventQueue<State<L>>) {
+    fn drop<L: Layout>(self, conn: &mut Connection<State<L>>) {
         if let Some(river_layout) = self.river_layout {
-            river_layout.destroy(event_queue);
+            river_layout.destroy(conn);
         }
         if self.wl_output.version() >= 3 {
-            self.wl_output.release(event_queue);
+            self.wl_output.release(conn);
         }
     }
 }
@@ -146,20 +147,15 @@ impl<L: Layout> Dispatcher for State<L> {
 }
 
 impl<L: Layout> Dispatch<WlRegistry> for State<L> {
-    fn event(
-        &mut self,
-        event_queue: &mut EventQueue<Self>,
-        _: WlRegistry,
-        event: wl_registry::Event,
-    ) {
+    fn event(&mut self, conn: &mut Connection<Self>, _: WlRegistry, event: wl_registry::Event) {
         match event {
             wl_registry::Event::Global(global) if global.is::<WlOutput>() => {
-                self.outputs.push(Output::bind(event_queue, &global));
+                self.outputs.push(Output::bind(conn, &global));
             }
             wl_registry::Event::GlobalRemove(name) => {
                 if let Some(output_index) = self.outputs.iter().position(|o| o.reg_name == name) {
                     let output = self.outputs.swap_remove(output_index);
-                    output.drop(event_queue);
+                    output.drop(conn);
                 }
             }
             _ => (),
@@ -168,12 +164,7 @@ impl<L: Layout> Dispatch<WlRegistry> for State<L> {
 }
 
 impl<L: Layout> Dispatch<WlOutput> for State<L> {
-    fn event(
-        &mut self,
-        event_queue: &mut EventQueue<Self>,
-        output: WlOutput,
-        event: wl_output::Event,
-    ) {
+    fn event(&mut self, conn: &mut Connection<Self>, output: WlOutput, event: wl_output::Event) {
         let output = self
             .outputs
             .iter_mut()
@@ -187,7 +178,7 @@ impl<L: Layout> Dispatch<WlOutput> for State<L> {
         if let wl_output::Event::Name(name) = event {
             output.name = Some(name.into_string().unwrap());
             output.river_layout = Some(self.layout_manager.get_layout(
-                event_queue,
+                conn,
                 output.wl_output,
                 CString::new(L::NAMESPACE).unwrap(),
             ));
@@ -198,7 +189,7 @@ impl<L: Layout> Dispatch<WlOutput> for State<L> {
 impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
     fn try_event(
         &mut self,
-        event_queue: &mut EventQueue<Self>,
+        conn: &mut Connection<Self>,
         layout: river_layout_v3::RiverLayoutV3,
         event: river_layout_v3::Event,
     ) -> Result<(), Error<L::Error>> {
@@ -232,7 +223,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
 
                 for rect in generated_layout.views {
                     layout.push_view_dimensions(
-                        event_queue,
+                        conn,
                         rect.x,
                         rect.y,
                         rect.width,
@@ -242,7 +233,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
                 }
 
                 layout.commit(
-                    event_queue,
+                    conn,
                     CString::new(generated_layout.layout_name).unwrap(),
                     args.serial,
                 );

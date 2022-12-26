@@ -12,8 +12,8 @@ thiserror = "1.0"
 
 [dependencies.wayrs-client]
 git = "https://github.com/MaxVerevkin/wayrs"
-rev = "3f57446896942490de953782202fdb17d2a14a23"
+rev = "074f58b6b5b6f567bad8b2809d23e52c0e3435c9"
 
 [dependencies.wayrs-scanner]
 git = "https://github.com/MaxVerevkin/wayrs"
-rev = "3f57446896942490de953782202fdb17d2a14a23"
+rev = "074f58b6b5b6f567bad8b2809d23e52c0e3435c9"
