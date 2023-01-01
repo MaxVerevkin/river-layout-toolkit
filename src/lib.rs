@@ -32,12 +32,8 @@ pub trait Layout: 'static {
     const NAMESPACE: &'static str;
 
     /// This function is called whenever the user sends a command via `riverctl send-layout-cmd`.
-    fn user_cmd(
-        &mut self,
-        cmd: String,
-        tags: Option<u32>,
-        output: Option<&str>,
-    ) -> Result<(), Self::Error>;
+    fn user_cmd(&mut self, cmd: String, tags: Option<u32>, output: &str)
+        -> Result<(), Self::Error>;
 
     /// This function is called whenever compositor requests a layout.
     fn generate_layout(
@@ -46,7 +42,7 @@ pub trait Layout: 'static {
         usable_width: u32,
         usable_height: u32,
         tags: u32,
-        output: Option<&str>,
+        output: &str,
     ) -> Result<GeneratedLayout, Self::Error>;
 }
 
@@ -116,8 +112,12 @@ struct State<L: Layout> {
 struct Output {
     wl_output: WlOutput,
     reg_name: u32,
-    name: Option<String>,
-    river_layout: Option<RiverLayoutV3>,
+    river_layout: Option<RiverLayout>,
+}
+
+struct RiverLayout {
+    river: RiverLayoutV3,
+    output_name: String,
 }
 
 impl Output {
@@ -125,14 +125,13 @@ impl Output {
         Self {
             wl_output: global.bind(conn, 4..=4).unwrap(),
             reg_name: global.name,
-            name: None,
             river_layout: None,
         }
     }
 
     fn drop<L: Layout>(self, conn: &mut Connection<State<L>>) {
         if let Some(river_layout) = self.river_layout {
-            river_layout.destroy(conn);
+            river_layout.river.destroy(conn);
         }
         self.wl_output.release(conn);
     }
@@ -172,12 +171,14 @@ impl<L: Layout> Dispatch<WlOutput> for State<L> {
         }
 
         if let wl_output::Event::Name(name) = event {
-            output.name = Some(name.into_string().unwrap());
-            output.river_layout = Some(self.layout_manager.get_layout(
-                conn,
-                output.wl_output,
-                CString::new(L::NAMESPACE).unwrap(),
-            ));
+            output.river_layout = Some(RiverLayout {
+                river: self.layout_manager.get_layout(
+                    conn,
+                    output.wl_output,
+                    CString::new(L::NAMESPACE).unwrap(),
+                ),
+                output_name: name.into_string().unwrap(),
+            });
         }
     }
 }
@@ -191,10 +192,11 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
     ) -> Result<(), Error<L::Error>> {
         use river_layout_v3::Event;
 
-        let output = self
+        let layout = self
             .outputs
             .iter()
-            .find(|o| o.river_layout == Some(layout))
+            .filter_map(|o| o.river_layout.as_ref())
+            .find(|o| o.river == layout)
             .expect("Received event for unknown layout object");
 
         match event {
@@ -209,7 +211,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
                         args.usable_width,
                         args.usable_height,
                         args.tags,
-                        output.name.as_deref(),
+                        &layout.output_name,
                     )
                     .map_err(Error::LayoutError)?;
 
@@ -218,7 +220,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
                 }
 
                 for rect in generated_layout.views {
-                    layout.push_view_dimensions(
+                    layout.river.push_view_dimensions(
                         conn,
                         rect.x,
                         rect.y,
@@ -228,7 +230,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
                     );
                 }
 
-                layout.commit(
+                layout.river.commit(
                     conn,
                     CString::new(generated_layout.layout_name).unwrap(),
                     args.serial,
@@ -238,7 +240,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
                 if let Err(err) = self.layout.user_cmd(
                     command.into_string().unwrap(),
                     self.last_user_cmd_tags,
-                    output.name.as_deref(),
+                    &layout.output_name,
                 ) {
                     return Err(Error::LayoutError(err));
                 }
