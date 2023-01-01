@@ -1,22 +1,20 @@
 #![warn(clippy::match_same_arms)]
 #![warn(clippy::semicolon_if_nothing_returned)]
 #![warn(clippy::unnecessary_wraps)]
+#![allow(clippy::single_component_path_imports)]
 
-mod layout_protocol {
+mod protocol {
     use wayrs_client;
     use wayrs_client::protocol::*;
     wayrs_scanner::generate!("river-layout-v3.xml");
 }
 
-use layout_protocol::{river_layout_manager_v3, river_layout_v3};
-use river_layout_manager_v3::RiverLayoutManagerV3;
-use river_layout_v3::RiverLayoutV3;
+use protocol::*;
+use wayrs_client::protocol::*;
 
 use wayrs_client::connection::Connection;
 use wayrs_client::global::{Global, GlobalExt, GlobalsExt};
-use wayrs_client::protocol::wl_output::{self, WlOutput};
-use wayrs_client::protocol::wl_registry::{self, WlRegistry};
-use wayrs_client::proxy::{Dispatch, Dispatcher, Proxy};
+use wayrs_client::proxy::{Dispatch, Dispatcher};
 use wayrs_client::socket::IoMode;
 
 use std::error::Error as StdError;
@@ -68,10 +66,10 @@ pub struct Rectangle {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error<E: StdError> {
-    #[error("Wayland Error: {0}")]
+    #[error("Could not connect to Waylasd: {0}")]
     WaylandConnect(#[from] wayrs_client::ConnectError),
-    #[error("Wayland Error: {0}")]
-    WaylandInit(#[from] wayrs_client::global::BindError),
+    #[error("Unsupported compositor: {0}")]
+    WaylandBind(#[from] wayrs_client::global::BindError),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
     #[error("Namespace '{0}' is in use")]
@@ -102,8 +100,8 @@ pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
     };
 
     loop {
-        conn.flush(IoMode::Blocking).unwrap();
-        conn.recv_events(IoMode::Blocking).unwrap();
+        conn.flush(IoMode::Blocking)?;
+        conn.recv_events(IoMode::Blocking)?;
         conn.dispatch_events(&mut state)?;
     }
 }
@@ -125,7 +123,7 @@ struct Output {
 impl Output {
     fn bind<L: Layout>(conn: &mut Connection<State<L>>, global: &Global) -> Self {
         Self {
-            wl_output: global.bind(conn, 1..=4).unwrap(),
+            wl_output: global.bind(conn, 4..=4).unwrap(),
             reg_name: global.name,
             name: None,
             river_layout: None,
@@ -136,9 +134,7 @@ impl Output {
         if let Some(river_layout) = self.river_layout {
             river_layout.destroy(conn);
         }
-        if self.wl_output.version() >= 3 {
-            self.wl_output.release(conn);
-        }
+        self.wl_output.release(conn);
     }
 }
 
@@ -190,7 +186,7 @@ impl<L: Layout> Dispatch<RiverLayoutV3> for State<L> {
     fn try_event(
         &mut self,
         conn: &mut Connection<Self>,
-        layout: river_layout_v3::RiverLayoutV3,
+        layout: RiverLayoutV3,
         event: river_layout_v3::Event,
     ) -> Result<(), Error<L::Error>> {
         use river_layout_v3::Event;
