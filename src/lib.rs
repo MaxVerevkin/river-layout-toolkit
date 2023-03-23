@@ -77,7 +77,7 @@ pub enum Error<E: StdError> {
 pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
     let mut conn = Connection::connect()?;
     let globals = conn.blocking_collect_initial_globals()?;
-    conn.set_callback_for(conn.registry(), wl_registry_cb);
+    conn.add_registry_cb(wl_registry_cb);
 
     let layout_manager = globals.bind(&mut conn, 1..=2)?;
 
@@ -144,15 +144,14 @@ impl Output {
 fn wl_registry_cb<L: Layout>(
     conn: &mut Connection<State<L>>,
     state: &mut State<L>,
-    _: WlRegistry,
-    event: wl_registry::Event,
+    event: &wl_registry::Event,
 ) {
     match event {
         wl_registry::Event::Global(global) if global.is::<WlOutput>() => {
-            state.outputs.push(Output::bind(conn, &global));
+            state.outputs.push(Output::bind(conn, global));
         }
         wl_registry::Event::GlobalRemove(name) => {
-            if let Some(output_index) = state.outputs.iter().position(|o| o.reg_name == name) {
+            if let Some(output_index) = state.outputs.iter().position(|o| o.reg_name == *name) {
                 let output = state.outputs.swap_remove(output_index);
                 output.drop(conn);
             }
@@ -209,7 +208,6 @@ fn river_layout_cb<L: Layout>(
         Event::NamespaceInUse => {
             state.error = Some(Error::NamespaceInUse(L::NAMESPACE.into()));
             conn.break_dispatch_loop();
-            return;
         }
         Event::LayoutDemand(args) => {
             let generated_layout = match state.layout.generate_layout(
@@ -258,7 +256,6 @@ fn river_layout_cb<L: Layout>(
             ) {
                 state.error = Some(Error::LayoutError(err));
                 conn.break_dispatch_loop();
-                return;
             }
         }
         Event::UserCommandTags(tags) => {
