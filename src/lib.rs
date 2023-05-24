@@ -1,10 +1,8 @@
 #![warn(clippy::match_same_arms)]
 #![warn(clippy::semicolon_if_nothing_returned)]
 #![warn(clippy::unnecessary_wraps)]
-#![allow(clippy::single_component_path_imports)]
 
 mod protocol {
-    use wayrs_client;
     pub use wayrs_client::protocol::*;
     wayrs_client::scanner::generate!("river-layout-v3.xml");
 }

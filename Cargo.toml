@@ -9,4 +9,4 @@ authors = ["MaxVerevkin <maxxverrr@gmail.com>"]
 
 [dependencies]
 thiserror = "1.0"
-wayrs-client = "0.10"
+wayrs-client = "0.10.4"
