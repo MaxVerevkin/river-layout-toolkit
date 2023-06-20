@@ -8,5 +8,6 @@ license = "MIT"
 authors = ["MaxVerevkin <maxxverrr@gmail.com>"]
 
 [dependencies]
+log = "0.4.19"
 thiserror = "1.0"
 wayrs-client = "0.10.4"

@@ -28,10 +28,18 @@ pub trait Layout: 'static {
     const NAMESPACE: &'static str;
 
     /// This function is called whenever the user sends a command via `riverctl send-layout-cmd`.
+    ///
+    /// # Errors
+    ///
+    /// An error returned from this function will be logged, but it will not terminate the application.
     fn user_cmd(&mut self, cmd: String, tags: Option<u32>, output: &str)
         -> Result<(), Self::Error>;
 
     /// This function is called whenever compositor requests a layout.
+    ///
+    /// # Errors
+    ///
+    /// Returning an error from this fuction will cause [`run`] to terminate.
     fn generate_layout(
         &mut self,
         view_count: u32,
@@ -252,8 +260,7 @@ fn river_layout_cb<L: Layout>(
                 state.last_user_cmd_tags,
                 &layout.output_name,
             ) {
-                state.error = Some(Error::LayoutError(err));
-                conn.break_dispatch_loop();
+                log::warn!("user_cmd error: {err}");
             }
         }
         Event::UserCommandTags(tags) => {
