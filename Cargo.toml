@@ -2,12 +2,12 @@
 name = "river-layout-toolkit"
 description = "Write River layouts in Rust with ease"
 repository = "https://github.com/MaxVerevkin/river-layout-toolkit"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 license = "MIT"
 authors = ["MaxVerevkin <maxxverrr@gmail.com>"]
 
 [dependencies]
-log = "0.4.19"
+log = "0.4"
 thiserror = "1.0"
 wayrs-client = "0.10.4"
