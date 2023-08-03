@@ -9,9 +9,8 @@ mod protocol {
 
 use protocol::*;
 
-use wayrs_client::connection::Connection;
 use wayrs_client::global::{Global, GlobalExt, GlobalsExt};
-use wayrs_client::IoMode;
+use wayrs_client::{Connection, IoMode};
 
 use std::error::Error as StdError;
 use std::ffi::CString;
@@ -81,8 +80,7 @@ pub enum Error<E: StdError> {
 }
 
 pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
-    let mut conn = Connection::connect()?;
-    let globals = conn.blocking_collect_initial_globals()?;
+    let (mut conn, globals) = Connection::connect_and_collect_globals()?;
     conn.add_registry_cb(wl_registry_cb);
 
     let layout_manager = globals.bind(&mut conn, 1..=2)?;
