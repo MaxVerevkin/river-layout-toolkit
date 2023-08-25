@@ -19,7 +19,7 @@ impl Layout for MyLayout {
         &mut self,
         _cmd: String,
         _tags: Option<u32>,
-        _output: Option<&str>,
+        _output: &str,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -30,7 +30,7 @@ impl Layout for MyLayout {
         usable_width: u32,
         usable_height: u32,
         _tags: u32,
-        _output: Option<&str>,
+        _output: &str,
     ) -> Result<GeneratedLayout, Self::Error> {
         let mut layout = GeneratedLayout {
             layout_name: "[]=".to_string(),
