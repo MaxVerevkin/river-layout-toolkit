@@ -10,7 +10,7 @@ mod protocol {
 use protocol::*;
 
 use wayrs_client::global::{Global, GlobalExt, GlobalsExt};
-use wayrs_client::{Connection, IoMode};
+use wayrs_client::{Connection, EventCtx, IoMode};
 
 use std::error::Error as StdError;
 use std::ffi::CString;
@@ -131,7 +131,7 @@ struct RiverLayout {
 impl Output {
     fn bind<L: Layout>(conn: &mut Connection<State<L>>, global: &Global) -> Self {
         Self {
-            wl_output: global.bind_with_cb(conn, 4..=4, wl_output_cb).unwrap(),
+            wl_output: global.bind_with_cb(conn, 4, wl_output_cb).unwrap(),
             reg_name: global.name,
             river_layout: None,
         }
@@ -164,26 +164,22 @@ fn wl_registry_cb<L: Layout>(
     }
 }
 
-fn wl_output_cb<L: Layout>(
-    conn: &mut Connection<State<L>>,
-    state: &mut State<L>,
-    output: WlOutput,
-    event: wl_output::Event,
-) {
-    let output = state
+fn wl_output_cb<L: Layout>(ctx: EventCtx<State<L>, WlOutput>) {
+    let output = ctx
+        .state
         .outputs
         .iter_mut()
-        .find(|o| o.wl_output == output)
+        .find(|o| o.wl_output == ctx.proxy)
         .expect("Received event for unknown output");
 
     if output.river_layout.is_some() {
         return;
     }
 
-    if let wl_output::Event::Name(name) = event {
+    if let wl_output::Event::Name(name) = ctx.event {
         output.river_layout = Some(RiverLayout {
-            river: state.layout_manager.get_layout_with_cb(
-                conn,
+            river: ctx.state.layout_manager.get_layout_with_cb(
+                ctx.conn,
                 output.wl_output,
                 CString::new(L::NAMESPACE).unwrap(),
                 river_layout_cb,
@@ -193,28 +189,24 @@ fn wl_output_cb<L: Layout>(
     }
 }
 
-fn river_layout_cb<L: Layout>(
-    conn: &mut Connection<State<L>>,
-    state: &mut State<L>,
-    layout: RiverLayoutV3,
-    event: river_layout_v3::Event,
-) {
+fn river_layout_cb<L: Layout>(ctx: EventCtx<State<L>, RiverLayoutV3>) {
     use river_layout_v3::Event;
 
-    let layout = state
+    let layout = ctx
+        .state
         .outputs
         .iter()
         .filter_map(|o| o.river_layout.as_ref())
-        .find(|o| o.river == layout)
+        .find(|o| o.river == ctx.proxy)
         .expect("Received event for unknown layout object");
 
-    match event {
+    match ctx.event {
         Event::NamespaceInUse => {
-            state.error = Some(Error::NamespaceInUse(L::NAMESPACE.into()));
-            conn.break_dispatch_loop();
+            ctx.state.error = Some(Error::NamespaceInUse(L::NAMESPACE.into()));
+            ctx.conn.break_dispatch_loop();
         }
         Event::LayoutDemand(args) => {
-            let generated_layout = match state.layout.generate_layout(
+            let generated_layout = match ctx.state.layout.generate_layout(
                 args.view_count,
                 args.usable_width,
                 args.usable_height,
@@ -223,21 +215,21 @@ fn river_layout_cb<L: Layout>(
             ) {
                 Ok(l) => l,
                 Err(e) => {
-                    state.error = Some(Error::LayoutError(e));
-                    conn.break_dispatch_loop();
+                    ctx.state.error = Some(Error::LayoutError(e));
+                    ctx.conn.break_dispatch_loop();
                     return;
                 }
             };
 
             if generated_layout.views.len() != args.view_count as usize {
-                state.error = Some(Error::InvalidGeneratedLayout);
-                conn.break_dispatch_loop();
+                ctx.state.error = Some(Error::InvalidGeneratedLayout);
+                ctx.conn.break_dispatch_loop();
                 return;
             }
 
             for rect in generated_layout.views {
                 layout.river.push_view_dimensions(
-                    conn,
+                    ctx.conn,
                     rect.x,
                     rect.y,
                     rect.width,
@@ -247,22 +239,22 @@ fn river_layout_cb<L: Layout>(
             }
 
             layout.river.commit(
-                conn,
+                ctx.conn,
                 CString::new(generated_layout.layout_name).unwrap(),
                 args.serial,
             );
         }
         Event::UserCommand(command) => {
-            if let Err(err) = state.layout.user_cmd(
+            if let Err(err) = ctx.state.layout.user_cmd(
                 command.into_string().unwrap(),
-                state.last_user_cmd_tags,
+                ctx.state.last_user_cmd_tags,
                 &layout.output_name,
             ) {
                 log::warn!("user_cmd error: {err}");
             }
         }
         Event::UserCommandTags(tags) => {
-            state.last_user_cmd_tags = Some(tags);
+            ctx.state.last_user_cmd_tags = Some(tags);
         }
     }
 }
