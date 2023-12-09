@@ -4,7 +4,7 @@
 
 mod protocol {
     pub use wayrs_client::protocol::*;
-    wayrs_client::scanner::generate!("river-layout-v3.xml");
+    wayrs_client::generate!("river-layout-v3.xml");
 }
 
 use protocol::*;
