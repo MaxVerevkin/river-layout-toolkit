@@ -2,19 +2,15 @@
 #![warn(clippy::semicolon_if_nothing_returned)]
 #![warn(clippy::unnecessary_wraps)]
 
-mod protocol {
-    pub use wayrs_client::protocol::*;
-    wayrs_client::generate!("river-layout-v3.xml");
-}
-
-use protocol::*;
-
-use wayrs_client::global::{Global, GlobalExt, GlobalsExt};
-use wayrs_client::{Connection, EventCtx, IoMode};
-
 use std::error::Error as StdError;
 use std::ffi::CString;
 use std::io;
+
+use wayrs_client::global::{Global, GlobalExt};
+use wayrs_client::protocol::*;
+use wayrs_client::{Connection, EventCtx, IoMode};
+
+wayrs_client::generate!("river-layout-v3.xml");
 
 /// This trait represents a layout generator implementation.
 pub trait Layout: 'static {
@@ -80,32 +76,26 @@ pub enum Error<E: StdError> {
 }
 
 pub fn run<L: Layout>(layout: L) -> Result<(), Error<L::Error>> {
-    let (mut conn, globals) = Connection::connect_and_collect_globals()?;
+    let mut conn = Connection::connect()?;
+    conn.blocking_roundtrip()?;
     conn.add_registry_cb(wl_registry_cb);
 
-    let layout_manager = globals.bind(&mut conn, 1..=2)?;
-
-    let outputs = globals
-        .iter()
-        .filter(|g| g.is::<WlOutput>())
-        .map(|g| Output::bind(&mut conn, g))
-        .collect();
-
     let mut state = State {
-        layout_manager,
+        layout_manager: conn.bind_singleton(1..=2)?,
         last_user_cmd_tags: None,
         layout,
-        outputs,
+        outputs: Vec::new(),
         error: None,
     };
 
     loop {
-        conn.flush(IoMode::Blocking)?;
-        conn.recv_events(IoMode::Blocking)?;
         conn.dispatch_events(&mut state);
         if let Some(err) = state.error.take() {
             return Err(err);
         }
+
+        conn.flush(IoMode::Blocking)?;
+        conn.recv_events(IoMode::Blocking)?;
     }
 }
 

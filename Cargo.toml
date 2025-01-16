@@ -9,5 +9,5 @@ authors = ["MaxVerevkin <maxxverrr@gmail.com>"]
 
 [dependencies]
 log = "0.4"
-thiserror = "1.0"
-wayrs-client = "1.0"
+thiserror = "2.0"
+wayrs-client = "1.2"
